@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>数字人资料整理平台</title>
+    <title>数字人资料整理平台 - 多用户共享版</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 引入Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -453,6 +456,11 @@
             margin-bottom: 3px;
         }
         
+        .file-meta {
+            font-size: 0.8rem;
+            color: #a0a0a0;
+        }
+        
         .file-tags {
             display: flex;
             flex-wrap: wrap;
@@ -561,6 +569,53 @@
             border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
         
+        /* 数据管理按钮 */
+        .data-management {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .data-management button {
+            padding: 10px 20px;
+            margin: 0 10px;
+            background: rgba(0, 168, 255, 0.2);
+            border: 1px solid #00a8ff;
+            border-radius: 8px;
+            color: #00a8ff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .data-management button:hover {
+            background: rgba(0, 168, 255, 0.4);
+            transform: translateY(-2px);
+        }
+        
+        /* 状态指示器 */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            margin-left: 10px;
+            font-size: 0.8rem;
+        }
+        
+        .online-status {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .online {
+            background-color: #4cd137;
+            box-shadow: 0 0 5px #4cd137;
+        }
+        
+        .offline {
+            background-color: #ff6b6b;
+        }
+        
         /* 响应式设计 */
         @media (max-width: 768px) {
             .header h1 {
@@ -598,6 +653,16 @@
                 align-items: flex-start;
                 gap: 15px;
             }
+            
+            .data-management {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .data-management button {
+                margin: 0;
+            }
         }
         
         @media (max-width: 480px) {
@@ -631,8 +696,8 @@
     <div class="container">
         <!-- 标题区域 -->
         <div class="header">
-            <h1>数字人资料整理平台</h1>
-            <p>专门为数字人相关学习资料设计的整理平台，支持文件上传和链接添加，可自定义分类和标签，随时随地访问您的数字人知识库。</p>
+            <h1>数字人资料整理平台 <span class="status-indicator"><span class="online-status offline" id="connectionStatus"></span><span id="connectionText">连接中...</span></span></h1>
+            <p>多用户共享的数字人资料整理平台，支持文件上传和链接添加，可自定义分类和标签，数据云端存储，多人实时协作。</p>
         </div>
         
         <!-- 上传区域 -->
@@ -739,35 +804,50 @@
             </div>
         </section>
         
+        <!-- 数据管理区域 -->
+        <div class="data-management">
+            <button id="refreshDataBtn"><i class="fas fa-sync-alt"></i> 刷新数据</button>
+            <button id="clearLocalCacheBtn"><i class="fas fa-trash-alt"></i> 清除本地缓存</button>
+        </div>
+        
         <!-- 底部信息 -->
         <div class="footer">
-            <p>© 2023 数字人资料整理平台 | 支持跨设备访问，数据本地存储</p>
+            <p>© 2023 数字人资料整理平台 | 数据云端存储，支持多用户实时协作</p>
             <p style="margin-top: 10px;">已上传 <span id="totalFiles">0</span> 个文件，创建 <span id="totalCategories">2</span> 个分类，<span id="totalTags">5</span> 个标签</p>
+            <p style="margin-top: 10px; font-size: 0.8rem; color: #9c88ff;">数据存储在云端，所有用户共享同一份数据</p>
         </div>
     </div>
     
     <script>
-        // 数据存储
-        let categories = {
-            'open_source_models': {
-                id: 'open_source_models',
-                name: '开源数字人生成模型',
-                files: [],
-                color: '#00a8ff'
-            },
-            'digital_human_detection': {
-                id: 'digital_human_detection',
-                name: '数字人鉴伪检测',
-                files: [],
-                color: '#9c88ff'
-            }
+        // Firebase配置 - 请替换为您自己的Firebase配置
+        const firebaseConfig = {
+            apiKey: "AIzaSyCzBvYQ0XzVJQqXQl8XQqXQl8XQqXQl8XQ",
+            authDomain: "digital-human-platform.firebaseapp.com",
+            projectId: "digital-human-platform",
+            storageBucket: "digital-human-platform.appspot.com",
+            messagingSenderId: "123456789012",
+            appId: "1:123456789012:web:abcdef1234567890abcdef"
         };
         
-        let tags = ['3D建模', '动作捕捉', '语音合成', 'AI生成', '深度学习'];
-        let allTags = [...tags]; // 所有可用标签
+        // 初始化Firebase
+        let firebaseApp, db;
+        try {
+            firebaseApp = firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            console.log("Firebase初始化成功");
+        } catch (error) {
+            console.error("Firebase初始化失败:", error);
+            // 如果Firebase初始化失败，使用本地存储作为后备
+            alert("注意：无法连接到云端数据库，将使用本地存储模式。数据将不会在多用户间共享。");
+        }
+        
+        // 数据存储
+        let categories = {};
+        let allTags = [];
         let fileCounter = 0;
         let currentUploadFiles = [];
         let currentUploadType = ''; // 'file' 或 'link'
+        let isOnline = false;
         
         // DOM元素
         const fileUploadBox = document.getElementById('fileUploadBox');
@@ -790,23 +870,309 @@
         const totalFilesElement = document.getElementById('totalFiles');
         const totalCategoriesElement = document.getElementById('totalCategories');
         const totalTagsElement = document.getElementById('totalTags');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectionText = document.getElementById('connectionText');
+        const refreshDataBtn = document.getElementById('refreshDataBtn');
+        const clearLocalCacheBtn = document.getElementById('clearLocalCacheBtn');
+        
+        // 本地存储键名（作为缓存）
+        const STORAGE_KEYS = {
+            CATEGORIES: 'digital_human_categories_cache',
+            TAGS: 'digital_human_tags_cache',
+            FILE_COUNTER: 'digital_human_file_counter_cache',
+            LAST_SYNC: 'digital_human_last_sync'
+        };
         
         // 初始化页面
-        function initPage() {
-            // 初始化分类选择下拉框
+        async function initPage() {
+            updateConnectionStatus(false);
+            
+            if (db) {
+                // 尝试使用Firebase
+                try {
+                    await loadDataFromFirebase();
+                    isOnline = true;
+                    updateConnectionStatus(true);
+                    setupRealtimeUpdates();
+                } catch (error) {
+                    console.error("从Firebase加载数据失败:", error);
+                    // 如果Firebase失败，尝试从本地缓存加载
+                    loadDataFromCache();
+                    isOnline = false;
+                    updateConnectionStatus(false);
+                }
+            } else {
+                // 没有Firebase配置，使用本地缓存
+                loadDataFromCache();
+                isOnline = false;
+                updateConnectionStatus(false);
+            }
+            
+            // 初始化UI
             updateCategorySelect();
-            
-            // 初始化标签选择区域
             updateTagsSelection();
-            
-            // 显示分类
             updateCategoriesDisplay();
-            
-            // 显示标签
             updateTagsDisplay();
-            
-            // 更新统计信息
             updateStats();
+        }
+        
+        // 从Firebase加载数据
+        async function loadDataFromFirebase() {
+            try {
+                // 获取分类数据
+                const categoriesSnapshot = await db.collection('categories').get();
+                categories = {};
+                
+                categoriesSnapshot.forEach(doc => {
+                    const categoryData = doc.data();
+                    categories[doc.id] = {
+                        id: doc.id,
+                        name: categoryData.name,
+                        files: categoryData.files || [],
+                        color: categoryData.color || getRandomColor(),
+                        updatedAt: categoryData.updatedAt || new Date().toISOString()
+                    };
+                });
+                
+                // 如果没有分类，创建默认分类
+                if (Object.keys(categories).length === 0) {
+                    await initializeDefaultDataInFirebase();
+                }
+                
+                // 获取标签数据
+                const tagsDoc = await db.collection('metadata').doc('tags').get();
+                if (tagsDoc.exists) {
+                    allTags = tagsDoc.data().tags || [];
+                } else {
+                    allTags = ['3D建模', '动作捕捉', '语音合成', 'AI生成', '深度学习'];
+                    await db.collection('metadata').doc('tags').set({ tags: allTags });
+                }
+                
+                // 获取文件计数器
+                const counterDoc = await db.collection('metadata').doc('counter').get();
+                if (counterDoc.exists) {
+                    fileCounter = counterDoc.data().fileCounter || 0;
+                } else {
+                    fileCounter = 0;
+                    await db.collection('metadata').doc('counter').set({ fileCounter: fileCounter });
+                }
+                
+                // 更新本地缓存
+                saveDataToCache();
+                
+                console.log("从Firebase加载数据成功");
+                return true;
+            } catch (error) {
+                console.error("从Firebase加载数据时出错:", error);
+                throw error;
+            }
+        }
+        
+        // 从本地缓存加载数据
+        function loadDataFromCache() {
+            try {
+                // 加载分类数据
+                const categoriesData = localStorage.getItem(STORAGE_KEYS.CATEGORIES);
+                if (categoriesData) {
+                    categories = JSON.parse(categoriesData);
+                }
+                
+                // 加载标签数据
+                const tagsData = localStorage.getItem(STORAGE_KEYS.TAGS);
+                if (tagsData) {
+                    allTags = JSON.parse(tagsData);
+                }
+                
+                // 加载文件计数器
+                const fileCounterData = localStorage.getItem(STORAGE_KEYS.FILE_COUNTER);
+                if (fileCounterData) {
+                    fileCounter = parseInt(fileCounterData);
+                }
+                
+                // 如果没有数据，使用默认数据
+                if (Object.keys(categories).length === 0) {
+                    initializeDefaultData();
+                }
+                
+                console.log("从本地缓存加载数据成功");
+                return true;
+            } catch (e) {
+                console.error('从本地缓存加载数据时出错:', e);
+                // 如果加载失败，使用默认数据
+                initializeDefaultData();
+                return false;
+            }
+        }
+        
+        // 保存数据到本地缓存
+        function saveDataToCache() {
+            try {
+                localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+                localStorage.setItem(STORAGE_KEYS.TAGS, JSON.stringify(allTags));
+                localStorage.setItem(STORAGE_KEYS.FILE_COUNTER, fileCounter.toString());
+                localStorage.setItem(STORAGE_KEYS.LAST_SYNC, new Date().toISOString());
+            } catch (e) {
+                console.error('保存数据到本地缓存时出错:', e);
+            }
+        }
+        
+        // 保存数据到Firebase
+        async function saveDataToFirebase() {
+            if (!db || !isOnline) return false;
+            
+            try {
+                // 保存每个分类
+                for (const categoryId in categories) {
+                    const category = categories[categoryId];
+                    await db.collection('categories').doc(categoryId).set({
+                        name: category.name,
+                        files: category.files,
+                        color: category.color,
+                        updatedAt: new Date().toISOString()
+                    }, { merge: true });
+                }
+                
+                // 保存标签
+                await db.collection('metadata').doc('tags').set({ tags: allTags }, { merge: true });
+                
+                // 保存文件计数器
+                await db.collection('metadata').doc('counter').set({ fileCounter: fileCounter }, { merge: true });
+                
+                console.log("数据已保存到Firebase");
+                return true;
+            } catch (error) {
+                console.error("保存数据到Firebase时出错:", error);
+                isOnline = false;
+                updateConnectionStatus(false);
+                return false;
+            }
+        }
+        
+        // 在Firebase中初始化默认数据
+        async function initializeDefaultDataInFirebase() {
+            categories = {
+                'open_source_models': {
+                    id: 'open_source_models',
+                    name: '开源数字人生成模型',
+                    files: [],
+                    color: '#00a8ff'
+                },
+                'digital_human_detection': {
+                    id: 'digital_human_detection',
+                    name: '数字人鉴伪检测',
+                    files: [],
+                    color: '#9c88ff'
+                }
+            };
+            
+            allTags = ['3D建模', '动作捕捉', '语音合成', 'AI生成', '深度学习'];
+            fileCounter = 0;
+            
+            // 保存到Firebase
+            await saveDataToFirebase();
+            
+            // 保存到本地缓存
+            saveDataToCache();
+        }
+        
+        // 初始化默认数据（本地）
+        function initializeDefaultData() {
+            categories = {
+                'open_source_models': {
+                    id: 'open_source_models',
+                    name: '开源数字人生成模型',
+                    files: [],
+                    color: '#00a8ff'
+                },
+                'digital_human_detection': {
+                    id: 'digital_human_detection',
+                    name: '数字人鉴伪检测',
+                    files: [],
+                    color: '#9c88ff'
+                }
+            };
+            
+            allTags = ['3D建模', '动作捕捉', '语音合成', 'AI生成', '深度学习'];
+            fileCounter = 0;
+            
+            // 保存到本地缓存
+            saveDataToCache();
+        }
+        
+        // 设置实时更新监听
+        function setupRealtimeUpdates() {
+            if (!db) return;
+            
+            // 监听分类变化
+            db.collection('categories').onSnapshot((snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === 'added' || change.type === 'modified') {
+                        const categoryData = change.doc.data();
+                        categories[change.doc.id] = {
+                            id: change.doc.id,
+                            name: categoryData.name,
+                            files: categoryData.files || [],
+                            color: categoryData.color || getRandomColor(),
+                            updatedAt: categoryData.updatedAt || new Date().toISOString()
+                        };
+                    } else if (change.type === 'removed') {
+                        delete categories[change.doc.id];
+                    }
+                    
+                    // 更新UI
+                    updateCategoriesDisplay();
+                    updateCategorySelect();
+                    updateStats();
+                    
+                    // 更新本地缓存
+                    saveDataToCache();
+                });
+            }, (error) => {
+                console.error("监听分类变化时出错:", error);
+            });
+            
+            // 监听标签变化
+            db.collection('metadata').doc('tags').onSnapshot((doc) => {
+                if (doc.exists) {
+                    allTags = doc.data().tags || [];
+                    updateTagsDisplay();
+                    updateTagsSelection();
+                    updateStats();
+                    
+                    // 更新本地缓存
+                    saveDataToCache();
+                }
+            }, (error) => {
+                console.error("监听标签变化时出错:", error);
+            });
+            
+            // 监听文件计数器变化
+            db.collection('metadata').doc('counter').onSnapshot((doc) => {
+                if (doc.exists) {
+                    fileCounter = doc.data().fileCounter || 0;
+                    updateStats();
+                    
+                    // 更新本地缓存
+                    saveDataToCache();
+                }
+            }, (error) => {
+                console.error("监听文件计数器变化时出错:", error);
+            });
+        }
+        
+        // 更新连接状态显示
+        function updateConnectionStatus(connected) {
+            isOnline = connected;
+            const statusElement = connectionStatus;
+            const textElement = connectionText;
+            
+            if (connected) {
+                statusElement.className = 'online-status online';
+                textElement.textContent = '已连接云端';
+            } else {
+                statusElement.className = 'online-status offline';
+                textElement.textContent = '离线模式（仅本地）';
+            }
         }
         
         // 文件上传处理
@@ -900,7 +1266,7 @@
         }
         
         // 确认上传
-        confirmUploadBtn.addEventListener('click', () => {
+        confirmUploadBtn.addEventListener('click', async () => {
             // 获取选择的分类
             let categoryId = categorySelect.value;
             
@@ -941,9 +1307,9 @@
             
             // 上传文件或链接
             if (currentUploadType === 'file') {
-                uploadFiles(currentUploadFiles, categoryId, selectedTags);
+                await uploadFiles(currentUploadFiles, categoryId, selectedTags);
             } else {
-                uploadLink(currentUploadFiles[0], categoryId, selectedTags);
+                await uploadLink(currentUploadFiles[0], categoryId, selectedTags);
             }
             
             // 隐藏上传选项
@@ -966,11 +1332,12 @@
         });
         
         // 上传文件
-        function uploadFiles(files, categoryId, selectedTags) {
+        async function uploadFiles(files, categoryId, selectedTags) {
             uploadStatus.textContent = `正在上传 ${files.length} 个文件...`;
             uploadStatus.style.color = '#00a8ff';
             
-            setTimeout(() => {
+            // 模拟上传过程
+            setTimeout(async () => {
                 for (let i = 0; i < files.length; i++) {
                     const file = files[i];
                     const fileName = file.name || `链接_${Date.now()}`;
@@ -986,15 +1353,27 @@
                         type: fileType,
                         date: new Date().toLocaleDateString(),
                         tags: selectedTags,
-                        url: file.url || null
+                        url: file.url || null,
+                        uploadedBy: getCurrentUser(),
+                        uploadedAt: new Date().toISOString()
                     });
                     
                     fileCounter++;
                 }
                 
+                // 更新显示
                 updateCategoriesDisplay();
                 updateTagsDisplay();
+                updateTagsSelection();
                 updateStats();
+                
+                // 保存到云端（如果在线）
+                if (isOnline && db) {
+                    await saveDataToFirebase();
+                }
+                
+                // 保存到本地缓存
+                saveDataToCache();
                 
                 uploadStatus.textContent = `成功上传 ${files.length} 个文件到"${categories[categoryId].name}"分类！`;
                 uploadStatus.style.color = '#4cd137';
@@ -1010,11 +1389,11 @@
         }
         
         // 上传链接
-        function uploadLink(linkData, categoryId, selectedTags) {
+        async function uploadLink(linkData, categoryId, selectedTags) {
             uploadStatus.textContent = '正在添加链接...';
             uploadStatus.style.color = '#00a8ff';
             
-            setTimeout(() => {
+            setTimeout(async () => {
                 const linkId = `link_${Date.now()}`;
                 const linkName = linkData.name.length > 40 ? linkData.name.substring(0, 40) + '...' : linkData.name;
                 
@@ -1024,13 +1403,26 @@
                     type: 'LINK',
                     date: new Date().toLocaleDateString(),
                     tags: selectedTags,
-                    url: linkData.url
+                    url: linkData.url,
+                    uploadedBy: getCurrentUser(),
+                    uploadedAt: new Date().toISOString()
                 });
                 
                 fileCounter++;
+                
+                // 更新显示
                 updateCategoriesDisplay();
                 updateTagsDisplay();
+                updateTagsSelection();
                 updateStats();
+                
+                // 保存到云端（如果在线）
+                if (isOnline && db) {
+                    await saveDataToFirebase();
+                }
+                
+                // 保存到本地缓存
+                saveDataToCache();
                 
                 uploadStatus.textContent = `链接添加成功到"${categories[categoryId].name}"分类！`;
                 uploadStatus.style.color = '#4cd137';
@@ -1122,13 +1514,19 @@
                             tagsHtml += '</div>';
                         }
                         
+                        // 构建上传者信息
+                        let uploaderInfo = '';
+                        if (file.uploadedBy) {
+                            uploaderInfo = `<div class="file-meta">上传者: ${file.uploadedBy} • ${file.date}</div>`;
+                        } else {
+                            uploaderInfo = `<div class="file-meta">${file.date} ${file.size && file.size !== 'N/A' ? `| ${file.size} KB` : ''}</div>`;
+                        }
+                        
                         fileItem.innerHTML = `
                             <i class="${iconClass}"></i>
                             <div class="file-info">
                                 <div class="file-name" title="${file.name}">${file.name}</div>
-                                <div style="font-size: 0.8rem; color: #a0a0a0;">
-                                    ${file.date} ${file.size && file.size !== 'N/A' ? `| ${file.size} KB` : ''}
-                                </div>
+                                ${uploaderInfo}
                                 ${tagsHtml}
                             </div>
                             <div class="delete-file" title="删除">
@@ -1138,9 +1536,9 @@
                         
                         // 添加删除功能
                         const deleteBtn = fileItem.querySelector('.delete-file');
-                        deleteBtn.addEventListener('click', (e) => {
+                        deleteBtn.addEventListener('click', async (e) => {
                             e.stopPropagation();
-                            deleteFile(categoryId, file.id);
+                            await deleteFile(categoryId, file.id);
                         });
                         
                         // 添加点击查看功能
@@ -1157,23 +1555,23 @@
                 
                 // 添加分类名称编辑功能
                 const editBtn = categoryElement.querySelector('.fa-edit');
-                editBtn.addEventListener('click', (e) => {
+                editBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    editCategoryName(categoryId);
+                    await editCategoryName(categoryId);
                 });
                 
                 // 添加分类名称点击编辑功能
                 const categoryNameElement = categoryElement.querySelector('.category-name');
-                categoryNameElement.addEventListener('click', (e) => {
+                categoryNameElement.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    editCategoryName(categoryId);
+                    await editCategoryName(categoryId);
                 });
                 
                 // 添加分类删除功能
                 const deleteBtn = categoryElement.querySelector('.fa-trash-alt');
-                deleteBtn.addEventListener('click', (e) => {
+                deleteBtn.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    deleteCategory(categoryId);
+                    await deleteCategory(categoryId);
                 });
                 
                 categoriesContainer.appendChild(categoryElement);
@@ -1181,13 +1579,21 @@
         }
         
         // 编辑分类名称
-        function editCategoryName(categoryId) {
+        async function editCategoryName(categoryId) {
             const newName = prompt('请输入新的分类名称：', categories[categoryId].name);
             if (newName && newName.trim()) {
                 categories[categoryId].name = newName.trim();
                 updateCategoriesDisplay();
                 updateCategorySelect();
                 updateStats();
+                
+                // 保存到云端（如果在线）
+                if (isOnline && db) {
+                    await saveDataToFirebase();
+                }
+                
+                // 保存到本地缓存
+                saveDataToCache();
                 
                 uploadStatus.textContent = '分类名称已更新';
                 uploadStatus.style.color = '#4cd137';
@@ -1198,7 +1604,7 @@
         }
         
         // 删除分类
-        function deleteCategory(categoryId) {
+        async function deleteCategory(categoryId) {
             if (Object.keys(categories).length <= 1) {
                 uploadStatus.textContent = '至少需要保留一个分类';
                 uploadStatus.style.color = '#ff6b6b';
@@ -1220,6 +1626,14 @@
                 updateCategorySelect();
                 updateStats();
                 
+                // 保存到云端（如果在线）
+                if (isOnline && db) {
+                    await saveDataToFirebase();
+                }
+                
+                // 保存到本地缓存
+                saveDataToCache();
+                
                 uploadStatus.textContent = '分类已删除';
                 uploadStatus.style.color = '#ff6b6b';
                 setTimeout(() => {
@@ -1229,11 +1643,19 @@
         }
         
         // 删除文件
-        function deleteFile(categoryId, fileId) {
+        async function deleteFile(categoryId, fileId) {
             categories[categoryId].files = categories[categoryId].files.filter(file => file.id !== fileId);
             fileCounter--;
             updateCategoriesDisplay();
             updateStats();
+            
+            // 保存到云端（如果在线）
+            if (isOnline && db) {
+                await saveDataToFirebase();
+            }
+            
+            // 保存到本地缓存
+            saveDataToCache();
             
             uploadStatus.textContent = '文件已删除';
             uploadStatus.style.color = '#ff6b6b';
@@ -1275,7 +1697,7 @@
                 
                 // 添加删除标签功能
                 const deleteIcon = tagElement.querySelector('i');
-                deleteIcon.addEventListener('click', () => {
+                deleteIcon.addEventListener('click', async () => {
                     // 从所有标签中删除
                     allTags = allTags.filter(t => t !== tag);
                     
@@ -1292,6 +1714,14 @@
                     updateTagsSelection();
                     updateCategoriesDisplay();
                     updateTagCount();
+                    
+                    // 保存到云端（如果在线）
+                    if (isOnline && db) {
+                        await saveDataToFirebase();
+                    }
+                    
+                    // 保存到本地缓存
+                    saveDataToCache();
                     
                     uploadStatus.textContent = `标签"${tag}"已删除`;
                     uploadStatus.style.color = '#ff6b6b';
@@ -1345,20 +1775,25 @@
             
             uploadStatus.textContent = `已筛选包含"${tag}"标签的资料`;
             uploadStatus.style.color = '#9c88ff';
-            setTimeout(() => {
+            
+            // 添加重置筛选按钮
+            const resetFilterBtn = document.createElement('button');
+            resetFilterBtn.textContent = '重置筛选';
+            resetFilterBtn.style.cssText = 'margin-left: 15px; padding: 5px 10px; background: rgba(0, 168, 255, 0.2); border: 1px solid #00a8ff; border-radius: 5px; color: #00a8ff; cursor: pointer;';
+            resetFilterBtn.addEventListener('click', () => {
+                updateCategoriesDisplay();
                 uploadStatus.textContent = '';
-            }, 3000);
+            });
+            
+            // 如果还没有添加重置按钮，则添加
+            if (!document.getElementById('resetFilterBtn')) {
+                resetFilterBtn.id = 'resetFilterBtn';
+                uploadStatus.appendChild(resetFilterBtn);
+            }
         }
         
         // 添加标签
-        addTagBtn.addEventListener('click', addTag);
-        tagInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                addTag();
-            }
-        });
-        
-        function addTag() {
+        addTagBtn.addEventListener('click', async () => {
             const tagText = tagInput.value.trim();
             if (!tagText) return;
             
@@ -1373,6 +1808,14 @@
             updateTagCount();
             tagInput.value = '';
             
+            // 保存到云端（如果在线）
+            if (isOnline && db) {
+                await saveDataToFirebase();
+            }
+            
+            // 保存到本地缓存
+            saveDataToCache();
+            
             // 显示添加成功提示
             const originalText = addTagBtn.textContent;
             addTagBtn.textContent = '已添加!';
@@ -1382,10 +1825,16 @@
                 addTagBtn.textContent = originalText;
                 addTagBtn.style.background = 'linear-gradient(90deg, #9c88ff, #8c7ae6)';
             }, 1000);
-        }
+        });
+        
+        tagInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addTagBtn.click();
+            }
+        });
         
         // 创建新分类
-        createCategoryBtn.addEventListener('click', () => {
+        createCategoryBtn.addEventListener('click', async () => {
             const categoryName = prompt('请输入新分类名称：');
             if (!categoryName || !categoryName.trim()) return;
             
@@ -1411,12 +1860,61 @@
             updateCategorySelect();
             updateStats();
             
+            // 保存到云端（如果在线）
+            if (isOnline && db) {
+                await saveDataToFirebase();
+            }
+            
+            // 保存到本地缓存
+            saveDataToCache();
+            
             uploadStatus.textContent = `分类"${categoryName}"创建成功！`;
             uploadStatus.style.color = '#4cd137';
             
             setTimeout(() => {
                 uploadStatus.textContent = '';
             }, 2000);
+        });
+        
+        // 刷新数据
+        refreshDataBtn.addEventListener('click', async () => {
+            uploadStatus.textContent = '正在刷新数据...';
+            uploadStatus.style.color = '#00a8ff';
+            
+            if (db) {
+                try {
+                    await loadDataFromFirebase();
+                    isOnline = true;
+                    updateConnectionStatus(true);
+                    uploadStatus.textContent = '数据刷新成功！';
+                    uploadStatus.style.color = '#4cd137';
+                } catch (error) {
+                    uploadStatus.textContent = '刷新失败，使用本地缓存数据';
+                    uploadStatus.style.color = '#ff6b6b';
+                    isOnline = false;
+                    updateConnectionStatus(false);
+                }
+            } else {
+                uploadStatus.textContent = '未配置云端数据库，无法刷新';
+                uploadStatus.style.color = '#ff6b6b';
+            }
+            
+            setTimeout(() => {
+                uploadStatus.textContent = '';
+            }, 3000);
+        });
+        
+        // 清除本地缓存
+        clearLocalCacheBtn.addEventListener('click', () => {
+            if (confirm('确定要清除本地缓存吗？这不会影响云端数据，但会清除本地的缓存副本。')) {
+                localStorage.clear();
+                uploadStatus.textContent = '本地缓存已清除，正在重新加载...';
+                uploadStatus.style.color = '#ff6b6b';
+                
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            }
         });
         
         // 更新统计信息
@@ -1432,8 +1930,35 @@
             return colors[Math.floor(Math.random() * colors.length)];
         }
         
+        // 获取当前用户标识
+        function getCurrentUser() {
+            // 尝试从localStorage获取用户标识
+            let userId = localStorage.getItem('digital_human_user_id');
+            let userName = localStorage.getItem('digital_human_user_name');
+            
+            // 如果没有用户标识，创建一个
+            if (!userId) {
+                userId = 'user_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('digital_human_user_id', userId);
+                
+                // 提示用户输入名称
+                userName = prompt('请输入您的用户名（用于标识上传者）：', '用户' + Math.floor(Math.random() * 1000));
+                if (!userName || userName.trim() === '') {
+                    userName = '匿名用户';
+                }
+                localStorage.setItem('digital_human_user_name', userName.trim());
+            }
+            
+            return userName || '匿名用户';
+        }
+        
         // 初始化页面
         initPage();
+        
+        // 在页面关闭前保存数据到缓存
+        window.addEventListener('beforeunload', () => {
+            saveDataToCache();
+        });
     </script>
 </body>
 </html>
